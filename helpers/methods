@@ -1,0 +1,22 @@
+
+const methods = [
+    "0x38ed1739",
+    "0x5c11d795",
+    "0x7ff36ab5",
+    "0x8803dbee",
+    "0xb6f9de95",
+    "0xfb3bdb41",
+    "0x3593564c",
+    "0x472b43f3"
+]
+
+// for uniswap universal router
+const commands = [
+    "0x0b08",
+    "0x0b00",
+]
+
+module.exports = {
+    methods,
+    commands
+}

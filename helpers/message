@@ -1,0 +1,278 @@
+const { ethers } = require("ethers");
+const fetch = require("node-fetch");
+const axios = require("axios");
+const TelegramBot = require("node-telegram-bot-api");
+const env = require("../env.json");
+const {
+	isBlacklisted,
+	isPosted,
+	addToPosted,
+	getPosted,
+	isScamChecksum,
+} = require("./database");
+const { TOKEN, CHAT } = require("../env.json");
+const { ROUTERS } = require("./addresses.json");
+const { getOwner } = require("./index");
+const { getChecksum } = require("./checksum");
+const tokenAbi = require("./tokenAbi");
+const bot = new TelegramBot(TOKEN);
+const apiKey = env.ETHERSCAN_API_KEY;
+
+let hasPosted = [];
+
+function getRelativeTime(timestamp) {
+	const currentTime = Math.floor(Date.now() / 1000);
+	const secondsElapsed = currentTime - timestamp;
+
+	if (secondsElapsed < 60) {
+		return secondsElapsed + " seconds ago";
+	} else if (secondsElapsed < 3600) {
+		const minutes = Math.floor(secondsElapsed / 60);
+		return minutes === 1 ? "1 minute ago" : minutes + " minutes ago";
+	} else if (secondsElapsed < 86400) {
+		const hours = Math.floor(secondsElapsed / 3600);
+		return hours === 1 ? "1 hour ago" : hours + " hours ago";
+	} else {
+		const days = Math.floor(secondsElapsed / 86400);
+		return days === 1 ? "1 day ago" : days + " days ago";
+	}
+}
+
+const getTokenInfo = async (tokenAddress, provider) => {
+	try {
+		const tokenContract = new ethers.Contract(
+			tokenAddress,
+			tokenAbi.tokenAbi,
+			provider
+		);
+		const [tokenName, tokenDecomals] = await Promise.all([
+			tokenContract.name(),
+			tokenContract.decimals(),
+		]);
+		return {
+			token: {
+				name: tokenName ? tokenName : "N/A",
+				decimals: tokenDecomals ? tokenDecomals : "N/A",
+			},
+		};
+	} catch (error) {
+		console.log(`Error fetching token info for ${tokenAddress}`);
+		return {
+			token: {
+				name: tokenName ? tokenName : "N/A",
+				decimals: tokenDecomals ? tokenDecomals : "N/A",
+			},
+		};
+	}
+};
+
+const isHoneyPot = async (tokenAddress, provider) => {
+	try {
+		const honeypotAPIUrl = `https://api.honeypot.is/v2/IsHoneypot?address=${tokenAddress}`;
+		const response = await fetch(honeypotAPIUrl);
+		if (response.status !== 404) {
+			const data = await response.json();
+			return data;
+		} else {
+			// if we can't find the token on honeypot.is, we get the token info with ethers
+			const data = await getTokenInfo(tokenAddress, provider);
+			return data;
+		}
+	} catch (error) {
+		const data = await getTokenInfo(tokenAddress, provider);
+		return data;
+	}
+};
+
+// just in case we check if token has been posted before, to avoid spamming
+const shouldPostMessage = (tokenAddress, pendingBlock) => {
+	if (!hasPosted[tokenAddress]?.includes(pendingBlock)) {
+		return true;
+	} else {
+		return false;
+	}
+};
+
+const getTokenSupply = async () => {
+	const apiUrl = `https://api.etherscan.io/api?module=stats&action=ethsupply2&apikey=${apiKey}`;
+	try {
+		const response = await axios.get(apiUrl);
+		const data = response.data;
+		if (data.status === "1") {
+			const tokenSupply = data.result.EthSupply;
+			return tokenSupply;
+		} else {
+			return 0;
+		}
+	} catch (error) {
+		return 0;
+	}
+};
+
+const getCoinPrice = async (symbol) => {
+	try {
+		const response = await axios.get(
+			`https://api.coingecko.com/api/v3/simple/price`,
+			{
+				params: {
+					ids: symbol.toLowerCase(),
+					vs_currencies: "usd",
+				},
+			}
+		);
+
+		const coinPrice = response.data[symbol.toLowerCase()].usd;
+		return coinPrice;
+	} catch (error) {
+		return 0;
+	}
+};
+const sendMessage = async (
+	transactions,
+	provider,
+	tokenAddress,
+	deltaTime,
+	transactionCount,
+	ownerAdress
+) => {
+	let socialInfo = {};
+
+	console.log(`Found ${transactions.length} transactions for ${tokenAddress}`);
+	const pendingBlock = await provider.getBlockNumber("pending");
+	const options = {
+		method: "GET",
+		headers: {
+			"X-BLOBR-KEY": env.DEXTOOLS_API_KEY,
+		},
+	};
+
+	fetch(
+		`https://open-api.dextools.io/free/v2/token/ether/${tokenAddress}`,
+		options
+	)
+		.then((response) => response.json())
+		.then((response) => {
+			socialInfo = response["data"].socialInfo;
+		})
+		.catch(() => (socialInfo = {}));
+	if (shouldPostMessage(tokenAddress, pendingBlock)) {
+		hasPosted[tokenAddress]
+			? hasPosted[tokenAddress].push(pendingBlock)
+			: (hasPosted[tokenAddress] = [pendingBlock]);
+		const [honeyPotCheck, contract] = await Promise.all([
+			isHoneyPot(tokenAddress, provider),
+			getOwner(tokenAddress),
+		]);
+		const time = getRelativeTime(contract[0].timeStamp);
+
+		let tokenInfo = `🟢Token:\n<code>${tokenAddress}</code>\n`;
+		const timeSinceLiquidityWasAdded =
+			Math.floor(Date.now() / 1000) -
+			parseInt(honeyPotCheck.pair.createdAtTimestamp);
+
+		const liquidity = honeyPotCheck.pair.liquidity || 0;
+		const name = honeyPotCheck.token.name || "Unknown";
+		const symbol = honeyPotCheck.token.symbol || "Unknown";
+		const ethSup = await getTokenSupply();
+		const ethersupply = BigInt(ethSup);
+		let supply = ethersupply / BigInt("10" + "0".repeat(18));
+		const coinPrice = await getCoinPrice(symbol);
+		let marketCap = Number(coinPrice) * Number(supply);
+
+		const simulationSuccess = honeyPotCheck.simulationSuccess || false;
+		const holderAnalysis = honeyPotCheck.holderAnalysis || {};
+
+		tokenInfo += ` 🟢 Token Name:                                   ${name}\n 🟢 Time since coin was deployed:   <code>${time}</code>\n`;
+		tokenInfo += ` 🟢 Time since liquidity was added:  ${timeSinceLiquidityWasAdded}\n`;
+
+		if (simulationSuccess) {
+			tokenInfo += holderAnalysis.holders
+				? ` 🟢 Holders:                                           ${holderAnalysis.holders}\n`
+				: "";
+		}
+		const highestGwei = transactions.sort(
+			(a, b) =>
+				Number(b.tx.maxPriorityFeePerGas || 0) -
+				Number(a.tx.maxPriorityFeePerGas || 0)
+		)[0];
+		tokenInfo += ` 🟢 Highest Gwei:                                 ${ethers.formatUnits(
+			String(highestGwei.tx.maxPriorityFeePerGas || 0),
+			"gwei"
+		)} \n`;
+		tokenInfo += ` 🟢 Contract Balance:                          ${transactions[0].contractBalance}\n`;
+		tokenInfo += ` 🟢 Owner address:                          ${ownerAdress}\n`;
+		tokenInfo += ` 🟢 Liquidity:                                         ${liquidity}\n`;
+		tokenInfo += ` 🟢 Market Cap:                                    ${marketCap}$\n`;
+		// tokenInfo += ` 🟢 Liquidity$: 			${""}$$`;
+		tokenInfo += ` 🟢 Socials:\n`;
+		socialInfo.discord && (tokenInfo += `     ◾${socialInfo.discord || ""}\n`);
+		socialInfo.medium && (tokenInfo += `     ◾${socialInfo.medium || ""}\n`);
+		socialInfo.telegram &&
+			(tokenInfo += `     ◾${socialInfo.telegram || ""}\n`);
+		socialInfo.twitter && (tokenInfo += `     ◾${socialInfo.twitter || ""}\n`);
+		socialInfo.website && (tokenInfo += `     ◾${socialInfo.website || ""}\n`);
+		socialInfo.github && (tokenInfo += `     ◾${socialInfo.github || ""}\n`);
+		socialInfo.bitbucket &&
+			(tokenInfo += `     ◾${socialInfo.bitbucket || ""}\n`);
+		socialInfo.instagram &&
+			(tokenInfo += `     ◾${socialInfo.instagram || ""}\n`);
+		socialInfo.facebook &&
+			(tokenInfo += `     ◾${socialInfo.facebook || ""}\n`);
+		socialInfo.linkedin &&
+			(tokenInfo += `     ◾${socialInfo.linkedin || ""}\n`);
+		socialInfo.reddit && (tokenInfo += `     ◾${socialInfo.reddit || ""}\n`);
+		socialInfo.tiktok && (tokenInfo += `     ◾${socialInfo.tiktok || ""}\n`);
+		socialInfo.youtube && (tokenInfo += `     ◾${socialInfo.youtube || ""}\n`);
+		if (!isPosted(tokenAddress)) {
+			const message = await bot.sendMessage(
+				CHAT,
+				`
+					<b>${transactionCount} Times within ${deltaTime} ms 
+					
+	                    ${tokenInfo}
+	                    ${links(tokenAddress)}
+	                    </b>`,
+				{
+					parse_mode: "HTML",
+					disable_web_page_preview: true,
+				}
+			);
+			addToPosted(tokenAddress, message.message_id);
+		} else {
+			// if token has been posted before we reply to the original message
+			const info = getPosted(tokenAddress);
+			await bot.sendMessage(
+				CHAT,
+				`
+				<b>${transactionCount} Times within ${deltaTime} ms 
+
+					${tokenInfo}
+					${links(tokenAddress)}
+	              </b>`,
+				{
+					parse_mode: "HTML",
+					disable_web_page_preview: true,
+					reply_to_message_id: info.messageId,
+				}
+			);
+		}
+	}
+};
+
+const links = (tokenAddress) => {
+	const etherscan = `https://etherscan.io/address/${tokenAddress}`;
+	const dextTools = `https://www.dextools.io/app/en/ether/pair-explorer/${tokenAddress}`;
+	const dexView = `https://www.dexview.com/eth/${tokenAddress}`;
+	const dexScreener = `https://dexscreener.com/ethereum/${tokenAddress}`;
+	const dexSpy = `https://dexspy.io/eth/token/${tokenAddress}`;
+	const maestro = `https://t.me/MaestroSniperBot?start=${tokenAddress}`;
+
+	return `\n<b><a href="${maestro}"> APE WITH MAESTRO</a>\n <a href="${dextTools}">Dextools</a> | <a href="${dexView}">DexView</a> | <a href="${dexScreener}">DexScreener</a> | <a href="${dexSpy}">DexSpy</a> | <a href="${etherscan}">Etherscan</a></b>
+`;
+};
+
+module.exports = {
+	sendMessage,
+	isHoneyPot,
+	getTokenInfo,
+};

@@ -1,0 +1,66 @@
+const low = require("lowdb");
+const FileSync = require("lowdb/adapters/FileSync");
+const adapter = new FileSync("db.json");
+const db = low(adapter);
+
+const addToBlacklist = (address) => {
+	db.read();
+	db.get("blacklist")
+		.push({ address: String(address).toLowerCase() })
+		.write();
+};
+
+const isBlacklisted = (address) => {
+	db.read();
+	return (
+		db
+			.get("blacklist")
+			.find({ address: String(address).toLowerCase() })
+			.value() !== undefined
+	);
+};
+
+const isPosted = (address) => {
+	db.read();
+	return (
+		db
+			.get("posted")
+			.find({ address: String(address).toLowerCase() })
+			.value() !== undefined
+	);
+};
+
+const addToPosted = (address, tgMessage) => {
+	db.read();
+	db.get("posted")
+		.push({ address: String(address).toLowerCase(), messageId: tgMessage })
+		.write();
+};
+
+const getPosted = (address) => {
+	db.read();
+	return db
+		.get("posted")
+		.find({ address: String(address).toLowerCase() })
+		.value();
+};
+
+const isScamChecksum = (checksum) => {
+	db.read();
+	return db.get("scamChecksums").find({ sum: checksum }).value() !== undefined;
+};
+
+const addChecksum = (checksum) => {
+	db.read();
+	db.get("scamChecksums").push({ sum: checksum }).write();
+};
+
+module.exports = {
+	addToBlacklist,
+	isBlacklisted,
+	isPosted,
+	addToPosted,
+	getPosted,
+	isScamChecksum,
+	addChecksum,
+};

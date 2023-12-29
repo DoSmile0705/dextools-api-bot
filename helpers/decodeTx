@@ -1,0 +1,44 @@
+const { ethers } = require('ethers');
+const { commands } = require('./methods');
+
+const decodeTx = (tx) => {
+    const data = tx.data.slice(10);
+    const selector = tx.data.slice(0, 10);
+
+    const decodeTransaction = (data, types) => {
+        const abi = new ethers.AbiCoder();
+        return abi.decode(types, data);
+    };
+
+    if (selector === "0x7ff36ab5" || selector === "0xfb3bdb41" || selector === "0xb6f9de95") {
+        const [amountOut, path, to, deadline] = decodeTransaction(`0x${data}`, ["uint256", "address[]", "address", "uint256"]);
+        const amountIn = tx.value;
+        return { amountIn, amountOut, path, to, deadline };
+    }
+
+    if (selector === "0x3593564c") {
+        const [decodeCommand, restData] = decodeTransaction(`0x${data}`, ["bytes", "bytes[]", "uint256"]);
+
+        if (commands.includes(decodeCommand)) {
+            if (decodeCommand === "0x0b00") {
+                const [test, amountIn, amountOut, path2, to, deadline] = decodeTransaction(restData[1], ["address", "uint256", "uint256", "bytes", "bool"]);
+                const path = [path2.slice(0, 42), "0x" + path2.slice(-40)]
+
+                return { amountIn, amountOut, path, to, deadline };
+            } else {
+                const [test, amountIn, amountOut, path, to, deadline] = decodeTransaction(restData[1], ["uint256", "uint256", "uint256", "address[]", "address", "uint256"]);
+                return { amountIn, amountOut, path, to, deadline };
+            };
+        }
+
+        return;
+    }
+
+    const [amountIn, amountOut, path, to, deadline] = decodeTransaction(`0x${data}`, ["uint256", "uint256", "address[]", "address", "uint256"]);
+
+    return { amountIn, amountOut, path, to, deadline };
+};
+
+module.exports = {
+    decodeTx
+};

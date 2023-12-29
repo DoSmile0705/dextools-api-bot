@@ -1,0 +1,25 @@
+{
+  "ROUTERS": [
+    {
+      "name": "UniswapV2",
+      "address": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
+      "icon": "🦄"
+    },
+    {
+      "name": "SushiSwap",
+      "address": "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f",
+      "icon": "🍣"
+    },
+    {
+      "name": "UniswapV2",
+      "address": "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad",
+      "icon": "🦄"
+    },
+    {
+      "name": "Universal Router",
+      "address": "0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b",
+      "icon": "🦄"
+    }
+  ],
+  "BLACKLISTED": ["0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", "0xdac17f958d2ee523a2206206994597c13d831ec7", "0xd068c7c941fbbd2300cb2f1841858c2643722dc7", "0xb2307aafd2ca79682f123647ff6fcd272506300a","0x7714f320adca62b149df2579361afec729c5fe6a", "0x0607a9844472e8ef1058dc33096ace550cb65909", "0xfb66321d7c674995dfcc2cb67a30bc978dc862ad","0x34ba042827996821cffeb06477d48a2ff9474483"]
+}
