@@ -1,4 +1,12 @@
 {
+	"name": "dextools-api",
+	"version": "1.0.0",
+	"description": "",
+	"main": "main.js",
+	"scripts": {
+		"start": "node main.js",
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
 	"dependencies": {
 		"alchemy-sdk": "^3.1.0",
 		"ether": "^0.0.9",
@@ -6,8 +14,10 @@
 		"ethereumjs-util": "^7.1.5",
 		"ethers": "^6.9.1",
 		"input": "^1.0.1",
+		"jsonwebtoken": "^9.0.2",
 		"lowdb": "^1.0.0",
 		"node-fetch": "^2.6.11",
-		"node-telegram-bot-api": "^0.64.0"
+		"node-telegram-bot-api": "^0.64.0",
+		"nodemon": "^3.0.2"
 	}
 }
